@@ -9,25 +9,6 @@ class CBSAdapter(integration_base.PlatformAdapter):
         self.season = season
         self.client = CBSClient(league_name=league_name, cookies=cookies)
 
-    @staticmethod
-    def resolve_login(username: str, password: str, league_name: str) -> dict:
-        """One-time login used when linking an account -- mirrors the
-        sibling NFL app's MFL `resolve_login`: the password is used here
-        only, never persisted. Returns everything needed to build a
-        PlatformAccount row (the session cookies go in extra_data; the
-        token itself isn't needed for subsequent HTML-scrape calls, which
-        reuse the cookies instead, but is returned too in case a future
-        CBS JSON endpoint needs it as a query param)."""
-        client = CBSClient(league_name=league_name)
-        token = client.login(username, password)
-        return {
-            "external_user_id": username,
-            "display_name": username,
-            "token": token,
-            "cookies": client.cookies,
-            "league_name": league_name,
-        }
-
     def get_league(self, platform_league_id: str) -> integration_base.LeagueDTO:
         html = self.client.get_league_home_html()
         return mapper.map_league(html, platform_league_id, self.season)

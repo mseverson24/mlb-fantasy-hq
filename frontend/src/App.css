@@ -130,6 +130,16 @@ input[type='password'] {
   border: 1px solid var(--border-strong);
 }
 
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.9rem;
+  text-decoration: underline;
+}
+
 .auth-page {
   max-width: 380px;
   margin: 3rem auto;
