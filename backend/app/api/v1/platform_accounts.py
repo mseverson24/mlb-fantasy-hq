@@ -91,19 +91,27 @@ def link_cbs_account(
     )
 
 
+_DEBUG_WINDOW = 15000
+
+
 @router.get("/cbs/raw-debug", response_model=RawDebugResponse)
 def cbs_raw_debug(
     page: str = "roster",
+    offset: int = 0,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> RawDebugResponse:
     """Temporary diagnostic, not a permanent feature: CBS's logged-in page
     structure was unverified when this adapter was built (no real account
-    to test against). Returns a snippet of the actual fetched HTML for
+    to test against). Returns a window of the actual fetched HTML for
     whichever page (roster/standings/league/players) so the real selectors
     in integrations/cbs/mapper.py can be corrected against real data,
-    rather than guessed at a second time. Safe to delete once CBS sync is
-    confirmed working end to end."""
+    rather than guessed at a second time. CBS's pages are large modern JS
+    bundles (confirmed live on the login page) -- the real content is
+    often well past the first few KB of script-loading boilerplate, hence
+    `offset` for paging through a long page rather than only ever seeing
+    its start. Safe to delete once CBS sync is confirmed working end to
+    end."""
     account = (
         db.query(PlatformAccount)
         .filter(PlatformAccount.user_id == current_user.id, PlatformAccount.platform == Platform.cbs)
@@ -128,6 +136,12 @@ def cbs_raw_debug(
 
     try:
         html = fetcher()
-        return RawDebugResponse(page=page, status="ok", html_snippet=html[:8000])
+        return RawDebugResponse(
+            page=page,
+            status="ok",
+            html_snippet=html[offset : offset + _DEBUG_WINDOW],
+            total_length=len(html),
+            offset=offset,
+        )
     except Exception as exc:
         return RawDebugResponse(page=page, status="error", error=f"{type(exc).__name__}: {exc}")

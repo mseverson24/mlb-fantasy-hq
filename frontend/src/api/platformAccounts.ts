@@ -24,3 +24,19 @@ export async function linkCBSAccount(payload: CBSCookiePayload): Promise<League>
   })
   return data
 }
+
+export interface RawDebugResult {
+  page: string
+  status: string
+  html_snippet: string | null
+  total_length: number | null
+  offset: number
+  error: string | null
+}
+
+export async function getCBSRawDebug(page: string, offset = 0): Promise<RawDebugResult> {
+  const { data } = await apiClient.get<RawDebugResult>('/platform-accounts/cbs/raw-debug', {
+    params: { page, offset },
+  })
+  return data
+}

@@ -3,7 +3,10 @@ import { useEffect, useState, type FormEvent } from 'react'
 import * as authApi from '../api/auth'
 import { useAuth } from '../auth/AuthContext'
 import * as platformAccountsApi from '../api/platformAccounts'
+import type { RawDebugResult } from '../api/platformAccounts'
 import type { League, PlatformAccount } from '../types/api'
+
+const DEBUG_WINDOW = 15000
 
 export default function SettingsPage() {
   const { user } = useAuth()
@@ -22,6 +25,13 @@ export default function SettingsPage() {
 
   const [adminError, setAdminError] = useState<string | null>(null)
   const [isBecomingAdmin, setIsBecomingAdmin] = useState(false)
+
+  const [debugPage, setDebugPage] = useState('roster')
+  const [debugOffset, setDebugOffset] = useState(0)
+  const [debugResult, setDebugResult] = useState<RawDebugResult | null>(null)
+  const [isDebugLoading, setIsDebugLoading] = useState(false)
+  const [debugError, setDebugError] = useState<string | null>(null)
+  const [copyLabel, setCopyLabel] = useState('Copy')
 
   useEffect(() => {
     platformAccountsApi
@@ -64,6 +74,45 @@ export default function SettingsPage() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  async function fetchDebug(page: string, offset: number) {
+    setIsDebugLoading(true)
+    setDebugError(null)
+    try {
+      const result = await platformAccountsApi.getCBSRawDebug(page, offset)
+      setDebugResult(result)
+      setDebugOffset(offset)
+    } catch (err) {
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined
+      setDebugError(typeof detail === 'string' ? detail : 'Could not fetch debug HTML.')
+    } finally {
+      setIsDebugLoading(false)
+    }
+  }
+
+  function handleCopySnippet() {
+    const text = debugResult?.html_snippet ?? ''
+    if (!text) return
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => setCopyLabel('Copied!'))
+        .catch(() => setCopyLabel('Copy failed'))
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      document.body.appendChild(textarea)
+      textarea.select()
+      try {
+        document.execCommand('copy')
+        setCopyLabel('Copied!')
+      } catch {
+        setCopyLabel('Copy failed')
+      }
+      document.body.removeChild(textarea)
+    }
+    setTimeout(() => setCopyLabel('Copy'), 2000)
   }
 
   return (
@@ -169,6 +218,94 @@ export default function SettingsPage() {
             {isSubmitting ? 'Connecting…' : 'Connect CBS account'}
           </button>
         </form>
+      </div>
+
+      <div className="card">
+        <h2>CBS raw HTML debug</h2>
+        <p className="muted" style={{ fontSize: '0.85rem' }}>
+          Temporary tool for diagnosing CBS page structure. Requires a connected CBS account above.
+        </p>
+        {debugError && <p className="form-error">{debugError}</p>}
+        <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.75rem' }}>
+          <select
+            value={debugPage}
+            onChange={(e) => setDebugPage(e.target.value)}
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-h)',
+              padding: '0.5rem 0.6rem',
+            }}
+          >
+            <option value="roster">roster</option>
+            <option value="league">league</option>
+            <option value="standings">standings</option>
+            <option value="players">players</option>
+          </select>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => fetchDebug(debugPage, 0)}
+            disabled={isDebugLoading}
+          >
+            {isDebugLoading ? 'Fetching…' : 'Fetch'}
+          </button>
+        </div>
+
+        {debugResult && (
+          <div>
+            <p className="muted" style={{ fontSize: '0.85rem' }}>
+              status: {debugResult.status}
+              {debugResult.total_length !== null && <> · total length: {debugResult.total_length}</>} · offset:{' '}
+              {debugResult.offset}
+            </p>
+            {debugResult.error && <p className="form-error">{debugResult.error}</p>}
+            {debugResult.html_snippet !== null && (
+              <>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={isDebugLoading || debugOffset <= 0}
+                    onClick={() => fetchDebug(debugPage, Math.max(0, debugOffset - DEBUG_WINDOW))}
+                  >
+                    ← Prev
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={
+                      isDebugLoading ||
+                      (debugResult.total_length !== null && debugOffset + DEBUG_WINDOW >= debugResult.total_length)
+                    }
+                    onClick={() => fetchDebug(debugPage, debugOffset + DEBUG_WINDOW)}
+                  >
+                    Next →
+                  </button>
+                  <button type="button" className="btn-link" onClick={handleCopySnippet}>
+                    {copyLabel}
+                  </button>
+                </div>
+                <pre
+                  style={{
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.75rem',
+                    maxHeight: '400px',
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  {debugResult.html_snippet}
+                </pre>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
