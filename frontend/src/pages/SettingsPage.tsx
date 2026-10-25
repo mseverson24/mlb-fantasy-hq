@@ -1,9 +1,12 @@
 import axios from 'axios'
 import { useEffect, useState, type FormEvent } from 'react'
+import * as authApi from '../api/auth'
+import { useAuth } from '../auth/AuthContext'
 import * as platformAccountsApi from '../api/platformAccounts'
 import type { League, PlatformAccount } from '../types/api'
 
 export default function SettingsPage() {
+  const { user } = useAuth()
   const [accounts, setAccounts] = useState<PlatformAccount[]>([])
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true)
 
@@ -14,12 +17,28 @@ export default function SettingsPage() {
   const [connectedLeague, setConnectedLeague] = useState<League | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  const [adminError, setAdminError] = useState<string | null>(null)
+  const [isBecomingAdmin, setIsBecomingAdmin] = useState(false)
+
   useEffect(() => {
     platformAccountsApi
       .listPlatformAccounts()
       .then(setAccounts)
       .finally(() => setIsLoadingAccounts(false))
   }, [])
+
+  async function handleBecomeAdmin() {
+    setAdminError(null)
+    setIsBecomingAdmin(true)
+    try {
+      await authApi.bootstrapAdmin()
+      window.location.reload()
+    } catch (err) {
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined
+      setAdminError(typeof detail === 'string' ? detail : 'Could not set admin status.')
+      setIsBecomingAdmin(false)
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -42,6 +61,20 @@ export default function SettingsPage() {
   return (
     <div>
       <h1>Settings</h1>
+
+      {!user?.is_admin && (
+        <div className="card">
+          <h2>Admin access</h2>
+          <p className="muted">
+            No admin exists yet on this app. The first person to click this becomes admin — it stops working the
+            moment anyone does.
+          </p>
+          {adminError && <p className="form-error">{adminError}</p>}
+          <button type="button" className="btn btn-secondary" onClick={handleBecomeAdmin} disabled={isBecomingAdmin}>
+            {isBecomingAdmin ? 'Setting…' : 'Become admin'}
+          </button>
+        </div>
+      )}
 
       <div className="card">
         <h2>Connected accounts</h2>

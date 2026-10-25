@@ -34,3 +34,8 @@ export async function getMe(): Promise<User> {
   const { data } = await apiClient.get<User>('/auth/me')
   return data
 }
+
+export async function bootstrapAdmin(): Promise<User> {
+  const { data } = await apiClient.post<User>('/auth/bootstrap-admin')
+  return data
+}
