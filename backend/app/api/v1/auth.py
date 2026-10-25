@@ -42,3 +42,19 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenResp
 @router.get("/me", response_model=MeResponse)
 def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
+
+
+@router.post("/bootstrap-admin", response_model=MeResponse)
+def bootstrap_admin(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> User:
+    """One-time self-promotion: makes the calling user an admin, but only
+    if no admin exists yet anywhere in the system. Exists because this app
+    has no admin UI to manage that flag another way yet, and there's no
+    direct database access to flip it by hand in production. Safe as a
+    standing endpoint even after use -- once any admin exists, every call
+    here (including a compromised/curious non-admin user) 403s."""
+    if db.query(User).filter(User.is_admin.is_(True)).first() is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="An admin already exists")
+    current_user.is_admin = True
+    db.commit()
+    db.refresh(current_user)
+    return current_user
