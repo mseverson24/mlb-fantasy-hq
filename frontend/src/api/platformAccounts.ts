@@ -36,6 +36,10 @@ export interface RawDebugResult {
   total_length: number | null
   offset: number
   error: string | null
+  status_code: number | null
+  final_url: string | null
+  redirect_chain: string[]
+  set_cookie_names: string[]
 }
 
 export async function getCBSRawDebug(page: string, offset = 0): Promise<RawDebugResult> {

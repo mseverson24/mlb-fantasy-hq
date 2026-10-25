@@ -146,24 +146,29 @@ def cbs_raw_debug(
     cookies = account.extra_data.get("cookies", {})
     adapter = CBSAdapter(league_name=league_name, season=_CURRENT_SEASON, cookies=cookies)
 
-    fetchers = {
-        "league": adapter.client.get_league_home_html,
-        "roster": lambda: adapter.client.get_roster_html(team_id=None),
-        "standings": adapter.client.get_standings_html,
-        "players": adapter.client.get_players_html,
+    paths = {
+        "league": "/",
+        "roster": "/roster",
+        "standings": "/standings",
+        "players": "/players",
     }
-    fetcher = fetchers.get(page)
-    if fetcher is None:
+    path = paths.get(page)
+    if path is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown page {page!r}")
 
     try:
-        html = fetcher()
+        resp = adapter.client._get(path)
+        html = resp.text
         return RawDebugResponse(
             page=page,
             status="ok",
             html_snippet=html[offset : offset + _DEBUG_WINDOW],
             total_length=len(html),
             offset=offset,
+            status_code=resp.status_code,
+            final_url=str(resp.url),
+            redirect_chain=[str(r.url) for r in resp.history],
+            set_cookie_names=list({c for c in resp.cookies.keys()}),
         )
     except Exception as exc:
         return RawDebugResponse(page=page, status="error", error=f"{type(exc).__name__}: {exc}")

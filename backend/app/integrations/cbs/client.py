@@ -46,7 +46,7 @@ class CBSClient:
         self.league_name = league_name
         self.cookies = cookies or {}
 
-    def _get_html(self, path: str) -> str:
+    def _get(self, path: str) -> httpx.Response:
         resp = httpx.get(
             f"https://{self.league_name}.baseball.cbssports.com{path}",
             cookies=self.cookies,
@@ -55,7 +55,10 @@ class CBSClient:
             follow_redirects=True,
         )
         resp.raise_for_status()
-        return resp.text
+        return resp
+
+    def _get_html(self, path: str) -> str:
+        return self._get(path).text
 
     def get_league_home_html(self) -> str:
         return self._get_html("/")

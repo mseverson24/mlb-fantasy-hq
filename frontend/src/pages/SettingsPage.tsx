@@ -287,9 +287,25 @@ export default function SettingsPage() {
           <div>
             <p className="muted" style={{ fontSize: '0.85rem' }}>
               status: {debugResult.status}
+              {debugResult.status_code !== null && <> · HTTP {debugResult.status_code}</>}
               {debugResult.total_length !== null && <> · total length: {debugResult.total_length}</>} · offset:{' '}
               {debugResult.offset}
             </p>
+            {debugResult.final_url && (
+              <p className="muted" style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>
+                final URL: {debugResult.final_url}
+              </p>
+            )}
+            {debugResult.redirect_chain.length > 0 && (
+              <p className="muted" style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>
+                redirected from: {debugResult.redirect_chain.join(' → ')}
+              </p>
+            )}
+            {debugResult.set_cookie_names.length > 0 && (
+              <p className="muted" style={{ fontSize: '0.8rem' }}>
+                server set cookies: {debugResult.set_cookie_names.join(', ')}
+              </p>
+            )}
             {debugResult.error && <p className="form-error">{debugResult.error}</p>}
             {debugResult.html_snippet !== null && (
               <>
