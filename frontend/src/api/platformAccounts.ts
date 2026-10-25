@@ -6,6 +6,10 @@ export async function listPlatformAccounts(): Promise<PlatformAccount[]> {
   return data
 }
 
+export async function deletePlatformAccount(id: string): Promise<void> {
+  await apiClient.delete(`/platform-accounts/${id}`)
+}
+
 export interface CBSCookiePayload {
   leagueName: string
   authSession: string

@@ -1,6 +1,6 @@
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class LinkCBSAccountRequest(BaseModel):
@@ -17,6 +17,18 @@ class LinkCBSAccountRequest(BaseModel):
     auth_state: str | None = None
     aws_alb: str | None = None
     aws_alb_cors: str | None = None
+
+    @field_validator("league_name")
+    @classmethod
+    def _normalize_league_name(cls, v: str) -> str:
+        # Accept a pasted URL or host like "oldorchard.baseball.cbssports.com"
+        # and keep just "oldorchard" -- the client adds .baseball.cbssports.com.
+        v = v.strip().lower()
+        v = v.removeprefix("https://").removeprefix("http://").split("/")[0]
+        v = v.removesuffix(".cbssports.com").removesuffix(".baseball")
+        if not v:
+            raise ValueError("League name is required")
+        return v
 
 
 class PlatformAccountRead(BaseModel):

@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -91,6 +93,25 @@ def link_cbs_account(
     )
 
 
+@router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_platform_account(
+    account_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Remove a connected account (and its league links, via cascade).
+    Only the owner can delete their own account."""
+    account = (
+        db.query(PlatformAccount)
+        .filter(PlatformAccount.id == account_id, PlatformAccount.user_id == current_user.id)
+        .first()
+    )
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    db.delete(account)
+    db.commit()
+
+
 _DEBUG_WINDOW = 15000
 
 
@@ -115,6 +136,7 @@ def cbs_raw_debug(
     account = (
         db.query(PlatformAccount)
         .filter(PlatformAccount.user_id == current_user.id, PlatformAccount.platform == Platform.cbs)
+        .order_by(PlatformAccount.updated_at.desc())
         .first()
     )
     if account is None or not account.access_token:

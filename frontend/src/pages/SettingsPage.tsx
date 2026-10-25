@@ -12,6 +12,8 @@ export default function SettingsPage() {
   const { user } = useAuth()
   const [accounts, setAccounts] = useState<PlatformAccount[]>([])
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [accountsError, setAccountsError] = useState<string | null>(null)
 
   const [leagueName, setLeagueName] = useState('')
   const [authSession, setAuthSession] = useState('')
@@ -39,6 +41,22 @@ export default function SettingsPage() {
       .then(setAccounts)
       .finally(() => setIsLoadingAccounts(false))
   }, [])
+
+  async function handleDeleteAccount(account: PlatformAccount) {
+    if (!window.confirm(`Remove ${account.platform.toUpperCase()} — ${account.display_name}?`)) return
+    setAccountsError(null)
+    setDeletingId(account.id)
+    try {
+      await platformAccountsApi.deletePlatformAccount(account.id)
+      setAccounts((prev) => prev.filter((a) => a.id !== account.id))
+      setDebugResult(null)
+    } catch (err) {
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined
+      setAccountsError(typeof detail === 'string' ? detail : 'Could not remove that account.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   async function handleBecomeAdmin() {
     setAdminError(null)
@@ -135,6 +153,7 @@ export default function SettingsPage() {
 
       <div className="card">
         <h2>Connected accounts</h2>
+        {accountsError && <p className="form-error">{accountsError}</p>}
         {isLoadingAccounts ? (
           <p className="muted">Loading…</p>
         ) : accounts.length === 0 ? (
@@ -142,8 +161,19 @@ export default function SettingsPage() {
         ) : (
           <ul>
             {accounts.map((a) => (
-              <li key={a.id}>
-                {a.platform.toUpperCase()} — {a.display_name} {a.is_connected ? '(connected)' : '(not connected)'}
+              <li key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <span>
+                  {a.platform.toUpperCase()} — {a.display_name} {a.is_connected ? '(connected)' : '(not connected)'}
+                </span>
+                <button
+                  type="button"
+                  className="btn-link"
+                  style={{ color: 'var(--danger)' }}
+                  onClick={() => handleDeleteAccount(a)}
+                  disabled={deletingId === a.id}
+                >
+                  {deletingId === a.id ? 'Removing…' : 'Remove'}
+                </button>
               </li>
             ))}
           </ul>
