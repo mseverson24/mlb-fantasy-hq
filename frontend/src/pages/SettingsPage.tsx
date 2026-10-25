@@ -1,12 +1,30 @@
 import axios from 'axios'
 import { useEffect, useState, type FormEvent } from 'react'
 import * as authApi from '../api/auth'
+import { API_BASE_URL } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import * as platformAccountsApi from '../api/platformAccounts'
 import type { RawDebugResult } from '../api/platformAccounts'
-import type { League, PlatformAccount } from '../types/api'
+import type { PlatformAccount } from '../types/api'
 
 const DEBUG_WINDOW = 15000
+
+function buildBookmarklet(ingestToken: string): string {
+  const src = `(function(){
+    var API=${JSON.stringify(API_BASE_URL)};
+    var TOKEN=${JSON.stringify(ingestToken)};
+    var path=location.pathname;
+    var page='league';
+    if(path.indexOf('/roster')>=0) page='roster';
+    else if(path.indexOf('/standings')>=0) page='standings';
+    else if(path.indexOf('/players')>=0) page='players';
+    fetch(API+'/platform-accounts/cbs/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TOKEN,page:page,html:document.documentElement.outerHTML})})
+      .then(function(r){return r.json()})
+      .then(function(d){alert((d.ok?'MLB FantasyHQ: ':'MLB FantasyHQ failed: ')+d.message)})
+      .catch(function(e){alert('MLB FantasyHQ error: '+e)});
+  })();`
+  return `javascript:${encodeURIComponent(src)}`
+}
 
 export default function SettingsPage() {
   const { user } = useAuth()
@@ -16,13 +34,8 @@ export default function SettingsPage() {
   const [accountsError, setAccountsError] = useState<string | null>(null)
 
   const [leagueName, setLeagueName] = useState('')
-  const [authSession, setAuthSession] = useState('')
-  const [authState, setAuthState] = useState('')
-  const [awsAlb, setAwsAlb] = useState('')
-  const [awsAlbCors, setAwsAlbCors] = useState('')
-  const [showExtraCookies, setShowExtraCookies] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [connectedLeague, setConnectedLeague] = useState<League | null>(null)
+  const [bookmarklet, setBookmarklet] = useState<{ leagueName: string; href: string } | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [adminError, setAdminError] = useState<string | null>(null)
@@ -74,21 +87,15 @@ export default function SettingsPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
-    setConnectedLeague(null)
+    setBookmarklet(null)
     setIsSubmitting(true)
     try {
-      const league = await platformAccountsApi.linkCBSAccount({
-        leagueName,
-        authSession,
-        authState,
-        awsAlb,
-        awsAlbCors,
-      })
-      setConnectedLeague(league)
+      const result = await platformAccountsApi.connectCBSAccount(leagueName)
+      setBookmarklet({ leagueName: result.leagueName, href: buildBookmarklet(result.ingestToken) })
       setAccounts(await platformAccountsApi.listPlatformAccounts())
     } catch (err) {
       const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined
-      setError(typeof detail === 'string' ? detail : 'Could not connect to CBS — try again in a moment.')
+      setError(typeof detail === 'string' ? detail : 'Could not connect — try again in a moment.')
     } finally {
       setIsSubmitting(false)
     }
@@ -183,77 +190,56 @@ export default function SettingsPage() {
       <div className="card">
         <h2>Connect your CBS league</h2>
         <p className="muted">
-          CBS has no login system an app like this can sign in through directly — their site doesn't work that
-          way anymore. Instead: log into CBS normally in your own browser, open developer tools (F12, or
-          right-click → Inspect), go to <strong>Application → Cookies → cbssports.com</strong>, find the cookie
-          named <strong>auth_session</strong>, and paste its value below. Nothing is typed into this app except
-          that one cookie value — no CBS password, ever.
+          CBS blocks plain requests from our server, even with a valid session cookie — this has been confirmed
+          directly, not guessed at. So instead of pasting a cookie, this app gives you a bookmarklet: a button you
+          drag to your bookmarks bar. Click it while you're on your own, already-logged-in CBS league pages, and it
+          sends what your browser sees straight to this app — no password or cookie ever touches our server.
         </p>
         {error && <p className="form-error">{error}</p>}
-        {connectedLeague && (
-          <p style={{ color: 'var(--success)' }}>
-            Connected! Found "{connectedLeague.name}" ({connectedLeague.season}).
-          </p>
-        )}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="leagueName">
-              League name (the part of your league's URL before .cbssports.com)
-            </label>
+            <label htmlFor="leagueName">League name (the part of your league's URL before .baseball.cbssports.com)</label>
             <input
               id="leagueName"
               type="text"
               value={leagueName}
               onChange={(e) => setLeagueName(e.target.value)}
-              placeholder="e.g. myleague"
+              placeholder="e.g. oldorchard"
               required
             />
           </div>
-          <div className="form-group">
-            <label htmlFor="authSession">auth_session cookie value</label>
-            <input
-              id="authSession"
-              type="text"
-              value={authSession}
-              onChange={(e) => setAuthSession(e.target.value)}
-              required
-            />
-          </div>
-
-          {!showExtraCookies ? (
-            <button type="button" className="btn-link" onClick={() => setShowExtraCookies(true)} style={{ marginBottom: '0.75rem' }}>
-              Connection failed? Add more cookies
-            </button>
-          ) : (
-            <>
-              <p className="muted" style={{ fontSize: '0.85rem' }}>
-                Only needed if connecting fails with just auth_session — grab these from the same cookie list.
-              </p>
-              <div className="form-group">
-                <label htmlFor="authState">auth_state cookie value (optional)</label>
-                <input id="authState" type="text" value={authState} onChange={(e) => setAuthState(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label htmlFor="awsAlb">AWSALB cookie value (optional)</label>
-                <input id="awsAlb" type="text" value={awsAlb} onChange={(e) => setAwsAlb(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label htmlFor="awsAlbCors">AWSALBCORS cookie value (optional)</label>
-                <input id="awsAlbCors" type="text" value={awsAlbCors} onChange={(e) => setAwsAlbCors(e.target.value)} />
-              </div>
-            </>
-          )}
-
           <button type="submit" className="btn" disabled={isSubmitting}>
-            {isSubmitting ? 'Connecting…' : 'Connect CBS account'}
+            {isSubmitting ? 'Connecting…' : 'Connect CBS league'}
           </button>
         </form>
+
+        {bookmarklet && (
+          <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border)' }}>
+            <p style={{ color: 'var(--success)' }}>Connected "{bookmarklet.leagueName}"! Now drag this to your bookmarks bar:</p>
+            <p style={{ marginBottom: '0.75rem' }}>
+              <a
+                href={bookmarklet.href}
+                className="btn"
+                style={{ display: 'inline-block', textDecoration: 'none' }}
+                onClick={(e) => e.preventDefault()}
+              >
+                ⚾ Sync to MLB FantasyHQ
+              </a>
+            </p>
+            <p className="muted" style={{ fontSize: '0.85rem' }}>
+              Then go to <strong>oldorchard.baseball.cbssports.com</strong>-style league pages in your own browser —
+              your league home, My Team/roster, Standings, Players — while logged in, and click that bookmark on
+              each one. It detects which page you're on automatically.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="card">
         <h2>CBS raw HTML debug</h2>
         <p className="muted" style={{ fontSize: '0.85rem' }}>
-          Temporary tool for diagnosing CBS page structure. Requires a connected CBS account above.
+          Shows whatever the bookmarklet last sent for each page type. Requires a connected CBS account above and at
+          least one bookmarklet click.
         </p>
         {debugError && <p className="form-error">{debugError}</p>}
         <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.75rem' }}>
@@ -279,7 +265,7 @@ export default function SettingsPage() {
             onClick={() => fetchDebug(debugPage, 0)}
             disabled={isDebugLoading}
           >
-            {isDebugLoading ? 'Fetching…' : 'Fetch'}
+            {isDebugLoading ? 'Loading…' : 'View'}
           </button>
         </div>
 
@@ -287,25 +273,10 @@ export default function SettingsPage() {
           <div>
             <p className="muted" style={{ fontSize: '0.85rem' }}>
               status: {debugResult.status}
-              {debugResult.status_code !== null && <> · HTTP {debugResult.status_code}</>}
               {debugResult.total_length !== null && <> · total length: {debugResult.total_length}</>} · offset:{' '}
               {debugResult.offset}
+              {debugResult.ingested_at && <> · ingested: {new Date(debugResult.ingested_at).toLocaleString()}</>}
             </p>
-            {debugResult.final_url && (
-              <p className="muted" style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>
-                final URL: {debugResult.final_url}
-              </p>
-            )}
-            {debugResult.redirect_chain.length > 0 && (
-              <p className="muted" style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>
-                redirected from: {debugResult.redirect_chain.join(' → ')}
-              </p>
-            )}
-            {debugResult.set_cookie_names.length > 0 && (
-              <p className="muted" style={{ fontSize: '0.8rem' }}>
-                server set cookies: {debugResult.set_cookie_names.join(', ')}
-              </p>
-            )}
             {debugResult.error && <p className="form-error">{debugResult.error}</p>}
             {debugResult.html_snippet !== null && (
               <>

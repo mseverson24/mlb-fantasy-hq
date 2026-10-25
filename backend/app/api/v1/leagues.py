@@ -47,11 +47,26 @@ def list_leagues(db: Session = Depends(get_db), current_user: User = Depends(get
 def sync_league(
     league_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> LeagueRead:
+    """Re-runs the mapper against whatever HTML the bookmarklet already
+    ingested (live server-side fetches to CBS are blocked -- see
+    integrations/cbs/client.py), useful after a mapper fix without
+    needing the user to click the bookmarklet again."""
     league, platform_account = _get_linked_league(db, league_id, current_user)
-    try:
-        league = league_sync_service.sync_league(db, current_user.id, platform_account, league.season)
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"CBS sync failed: {exc}") from exc
+    ingested = platform_account.extra_data.get("ingested") or {}
+    if not ingested:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No CBS page ingested yet -- use the bookmarklet from Settings first",
+        )
+    errors = []
+    for page, entry in ingested.items():
+        try:
+            league_sync_service.ingest_page(db, current_user.id, platform_account, league.season, page, entry["html"])
+        except Exception as exc:
+            errors.append(f"{page}: {exc}")
+    db.refresh(league)
+    if errors and not league.last_synced_at:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(errors))
     return LeagueRead(
         id=league.id,
         name=league.name,
@@ -103,8 +118,5 @@ def get_standings(
     league_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> list[StandingsRowRead]:
     league, platform_account = _get_linked_league(db, league_id, current_user)
-    try:
-        rows = league_sync_service.get_standings(db, league, platform_account)
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Couldn't load standings: {exc}") from exc
+    rows = league_sync_service.get_cached_standings(league, platform_account)
     return [StandingsRowRead(**row) for row in rows]

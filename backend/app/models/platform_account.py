@@ -37,6 +37,15 @@ class PlatformAccount(UUIDPkMixin, TimestampMixin, Base):
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     access_token: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # CBS has no server-reachable auth: plain HTTP requests from our backend
+    # get silently bounced to a login page regardless of cookie validity
+    # (confirmed live -- identical responses across many different cookie
+    # combinations). Instead, a bookmarklet run in the user's own browser
+    # posts the real rendered page HTML back here, authenticated by this
+    # opaque per-account token rather than the app's normal JWT (a JWT
+    # expires in 30 min; this needs to keep working from a bookmark
+    # clicked weeks later).
+    ingest_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
     extra_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="platform_accounts")

@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { League, PlatformAccount } from '../types/api'
+import type { PlatformAccount } from '../types/api'
 
 export async function listPlatformAccounts(): Promise<PlatformAccount[]> {
   const { data } = await apiClient.get<PlatformAccount[]>('/platform-accounts')
@@ -10,23 +10,14 @@ export async function deletePlatformAccount(id: string): Promise<void> {
   await apiClient.delete(`/platform-accounts/${id}`)
 }
 
-export interface CBSCookiePayload {
+export interface ConnectCBSResult {
   leagueName: string
-  authSession: string
-  authState?: string
-  awsAlb?: string
-  awsAlbCors?: string
+  ingestToken: string
 }
 
-export async function linkCBSAccount(payload: CBSCookiePayload): Promise<League> {
-  const { data } = await apiClient.post<League>('/platform-accounts/cbs', {
-    league_name: payload.leagueName,
-    auth_session: payload.authSession,
-    auth_state: payload.authState || undefined,
-    aws_alb: payload.awsAlb || undefined,
-    aws_alb_cors: payload.awsAlbCors || undefined,
-  })
-  return data
+export async function connectCBSAccount(leagueName: string): Promise<ConnectCBSResult> {
+  const { data } = await apiClient.post('/platform-accounts/cbs', { league_name: leagueName })
+  return { leagueName: data.league_name, ingestToken: data.ingest_token }
 }
 
 export interface RawDebugResult {
@@ -36,10 +27,7 @@ export interface RawDebugResult {
   total_length: number | null
   offset: number
   error: string | null
-  status_code: number | null
-  final_url: string | null
-  redirect_chain: string[]
-  set_cookie_names: string[]
+  ingested_at: string | null
 }
 
 export async function getCBSRawDebug(page: string, offset = 0): Promise<RawDebugResult> {

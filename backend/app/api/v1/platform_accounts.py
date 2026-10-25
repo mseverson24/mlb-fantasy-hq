@@ -1,3 +1,4 @@
+import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -5,16 +6,21 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.integrations.cbs.adapter import CBSAdapter
 from app.models import Platform, PlatformAccount, User
 from app.schemas.admin import RawDebugResponse
-from app.schemas.league import LeagueRead
-from app.schemas.platform_account import LinkCBSAccountRequest, PlatformAccountRead
+from app.schemas.platform_account import (
+    CBSIngestRequest,
+    CBSIngestResponse,
+    ConnectCBSRequest,
+    ConnectCBSResponse,
+    PlatformAccountRead,
+)
 from app.services import league_sync_service
 
 router = APIRouter(prefix="/platform-accounts", tags=["platform-accounts"])
 
 _CURRENT_SEASON = "2026"
+_DEBUG_WINDOW = 15000
 
 
 @router.get("", response_model=list[PlatformAccountRead])
@@ -24,34 +30,21 @@ def list_platform_accounts(
     accounts = db.query(PlatformAccount).filter(PlatformAccount.user_id == current_user.id).all()
     return [
         PlatformAccountRead(
-            id=a.id, platform=a.platform.value, display_name=a.display_name, is_connected=bool(a.access_token)
+            id=a.id, platform=a.platform.value, display_name=a.display_name, is_connected=bool(a.ingest_token)
         )
         for a in accounts
     ]
 
 
-@router.post("/cbs", response_model=LeagueRead, status_code=status.HTTP_201_CREATED)
-def link_cbs_account(
-    payload: LinkCBSAccountRequest,
+@router.post("/cbs", response_model=ConnectCBSResponse, status_code=status.HTTP_201_CREATED)
+def connect_cbs_account(
+    payload: ConnectCBSRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> LeagueRead:
-    """CBS has no login endpoint a server can authenticate against anymore
-    (confirmed live -- its site is a client-side-rendered app now, see
-    integrations/cbs/client.py's history). Connecting instead means: the
-    user logs into CBS normally in their own browser, then pastes the
-    resulting auth_session cookie here -- no password ever touches this
-    app. Stores the cookie(s) and immediately syncs the league/roster so
-    the connection is proven working (or fails loudly here) rather than
-    silently deferred to the first page load."""
-    cookies = {"auth_session": payload.auth_session}
-    if payload.auth_state:
-        cookies["auth_state"] = payload.auth_state
-    if payload.aws_alb:
-        cookies["AWSALB"] = payload.aws_alb
-    if payload.aws_alb_cors:
-        cookies["AWSALBCORS"] = payload.aws_alb_cors
-
+) -> ConnectCBSResponse:
+    """Registers the league name and issues a long-lived ingest token for
+    the bookmarklet -- see schemas/platform_account.py's ConnectCBSRequest
+    docstring for why plain server-side CBS requests don't work at all."""
     account = (
         db.query(PlatformAccount)
         .filter(
@@ -66,31 +59,41 @@ def link_cbs_account(
             user_id=current_user.id,
             platform=Platform.cbs,
             external_user_id=payload.league_name,
+            extra_data={},
         )
         db.add(account)
     account.display_name = payload.league_name
-    account.access_token = payload.auth_session
-    account.extra_data = {"cookies": cookies, "league_name": payload.league_name}
+    if not account.ingest_token:
+        account.ingest_token = secrets.token_urlsafe(32)
+    account.extra_data = {**(account.extra_data or {}), "league_name": payload.league_name}
     db.commit()
     db.refresh(account)
 
-    try:
-        league = league_sync_service.sync_league(db, current_user.id, account, _CURRENT_SEASON)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Saved the cookie, but couldn't read your league/roster yet: {exc}",
-        ) from exc
+    return ConnectCBSResponse(league_name=payload.league_name, ingest_token=account.ingest_token)
 
-    return LeagueRead(
-        id=league.id,
-        name=league.name,
-        season=league.season,
-        scoring_type=league.scoring_type,
-        num_teams=league.num_teams,
-        roster_positions=league.roster_positions,
-        last_synced_at=league.last_synced_at,
+
+@router.post("/cbs/ingest", response_model=CBSIngestResponse)
+def ingest_cbs_page(payload: CBSIngestRequest, db: Session = Depends(get_db)) -> CBSIngestResponse:
+    """Called cross-origin from the bookmarklet running on a cbssports.com
+    page -- authenticated by the opaque per-account token, not a JWT (see
+    CBSIngestRequest's docstring). No user session/cookie required."""
+    account = (
+        db.query(PlatformAccount)
+        .filter(PlatformAccount.platform == Platform.cbs, PlatformAccount.ingest_token == payload.token)
+        .first()
     )
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown or revoked ingest token")
+
+    try:
+        message = league_sync_service.ingest_page(
+            db, account.user_id, account, _CURRENT_SEASON, payload.page, payload.html
+        )
+        return CBSIngestResponse(page=payload.page, ok=True, message=message)
+    except ValueError as exc:
+        return CBSIngestResponse(page=payload.page, ok=False, message=str(exc))
+    except Exception as exc:
+        return CBSIngestResponse(page=payload.page, ok=False, message=f"{type(exc).__name__}: {exc}")
 
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -112,9 +115,6 @@ def delete_platform_account(
     db.commit()
 
 
-_DEBUG_WINDOW = 15000
-
-
 @router.get("/cbs/raw-debug", response_model=RawDebugResponse)
 def cbs_raw_debug(
     page: str = "roster",
@@ -122,53 +122,28 @@ def cbs_raw_debug(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> RawDebugResponse:
-    """Temporary diagnostic, not a permanent feature: CBS's logged-in page
-    structure was unverified when this adapter was built (no real account
-    to test against). Returns a window of the actual fetched HTML for
-    whichever page (roster/standings/league/players) so the real selectors
-    in integrations/cbs/mapper.py can be corrected against real data,
-    rather than guessed at a second time. CBS's pages are large modern JS
-    bundles (confirmed live on the login page) -- the real content is
-    often well past the first few KB of script-loading boilerplate, hence
-    `offset` for paging through a long page rather than only ever seeing
-    its start. Safe to delete once CBS sync is confirmed working end to
-    end."""
+    """Serves back whatever the bookmarklet last ingested for this page
+    type (see RawDebugResponse's docstring) -- lets the real markup be
+    inspected and the mapper selectors corrected against it."""
     account = (
         db.query(PlatformAccount)
         .filter(PlatformAccount.user_id == current_user.id, PlatformAccount.platform == Platform.cbs)
         .order_by(PlatformAccount.updated_at.desc())
         .first()
     )
-    if account is None or not account.access_token:
+    if account is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No connected CBS account")
 
-    league_name = account.extra_data.get("league_name")
-    cookies = account.extra_data.get("cookies", {})
-    adapter = CBSAdapter(league_name=league_name, season=_CURRENT_SEASON, cookies=cookies)
+    entry = (account.extra_data.get("ingested") or {}).get(page)
+    if entry is None:
+        return RawDebugResponse(page=page, status="not_ingested", error="No page ingested yet -- use the bookmarklet first")
 
-    paths = {
-        "league": "/",
-        "roster": "/roster",
-        "standings": "/standings",
-        "players": "/players",
-    }
-    path = paths.get(page)
-    if path is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown page {page!r}")
-
-    try:
-        resp = adapter.client._get(path)
-        html = resp.text
-        return RawDebugResponse(
-            page=page,
-            status="ok",
-            html_snippet=html[offset : offset + _DEBUG_WINDOW],
-            total_length=len(html),
-            offset=offset,
-            status_code=resp.status_code,
-            final_url=str(resp.url),
-            redirect_chain=[str(r.url) for r in resp.history],
-            set_cookie_names=list({c for c in resp.cookies.keys()}),
-        )
-    except Exception as exc:
-        return RawDebugResponse(page=page, status="error", error=f"{type(exc).__name__}: {exc}")
+    html = entry.get("html", "")
+    return RawDebugResponse(
+        page=page,
+        status="ok",
+        html_snippet=html[offset : offset + _DEBUG_WINDOW],
+        total_length=entry.get("total_length", len(html)),
+        offset=offset,
+        ingested_at=entry.get("at"),
+    )

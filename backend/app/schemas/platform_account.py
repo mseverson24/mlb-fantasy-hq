@@ -3,32 +3,53 @@ import uuid
 from pydantic import BaseModel, field_validator
 
 
-class LinkCBSAccountRequest(BaseModel):
-    """CBS has no login API a server can POST credentials to anymore (its
-    site is a modern logged-in-client-side Next.js app -- confirmed live,
-    see integrations/cbs/client.py's login_debug). Connecting instead
-    means: log into CBS normally in your own browser, then copy the
-    resulting session cookie out of dev tools. auth_session is the one
-    confirmed to matter; the others are optional extras to try if
-    auth_session alone isn't enough to authenticate scraped page fetches."""
+class ConnectCBSRequest(BaseModel):
+    """CBS blocks plain server-to-server requests regardless of cookies
+    (confirmed live: identical login-page responses across many different
+    cookie combinations, even ones copied fresh from an authenticated
+    session -- this is anti-scraping protection against the backend's own
+    requests, not a credential problem). Connecting now just registers the
+    league name and hands back a bookmarklet: a small button the user
+    drags to their bookmarks bar and clicks while on their real,
+    already-logged-in CBS pages, which posts the genuinely-rendered page
+    HTML back to /cbs/ingest. No password or cookie ever touches this
+    app's server."""
 
     league_name: str
-    auth_session: str
-    auth_state: str | None = None
-    aws_alb: str | None = None
-    aws_alb_cors: str | None = None
 
     @field_validator("league_name")
     @classmethod
     def _normalize_league_name(cls, v: str) -> str:
         # Accept a pasted URL or host like "oldorchard.baseball.cbssports.com"
-        # and keep just "oldorchard" -- the client adds .baseball.cbssports.com.
+        # and keep just "oldorchard".
         v = v.strip().lower()
         v = v.removeprefix("https://").removeprefix("http://").split("/")[0]
         v = v.removesuffix(".cbssports.com").removesuffix(".baseball")
         if not v:
             raise ValueError("League name is required")
         return v
+
+
+class ConnectCBSResponse(BaseModel):
+    league_name: str
+    ingest_token: str
+
+
+class CBSIngestRequest(BaseModel):
+    """Posted by the bookmarklet, authenticated by the opaque ingest_token
+    rather than this app's normal JWT -- a JWT expires in 30 minutes,
+    too short-lived for a bookmark the user might click again weeks
+    later."""
+
+    token: str
+    page: str
+    html: str
+
+
+class CBSIngestResponse(BaseModel):
+    page: str
+    ok: bool
+    message: str
 
 
 class PlatformAccountRead(BaseModel):

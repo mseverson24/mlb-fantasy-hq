@@ -9,6 +9,11 @@ app = FastAPI(title="MLB FantasyHQ")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
+    # The CBS bookmarklet runs *on* a cbssports.com page and POSTs to
+    # /platform-accounts/cbs/ingest from there -- that call is authenticated
+    # by its own opaque per-account token (see that endpoint), not cookies,
+    # so allowing this origin doesn't expose anything else.
+    allow_origin_regex=r"https://([a-z0-9-]+\.)*cbssports\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
