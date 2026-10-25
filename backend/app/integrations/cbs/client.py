@@ -18,13 +18,11 @@ import httpx
 # relies on for CBS's *public* rankings pages (app/scrapers/cbs_sports.py
 # there), just now behind a login.
 #
-# BEST EFFORT: CBS's actual markup for a logged-in league/roster/standings
-# view isn't documented anywhere accessible today. The page paths below
-# (ROSTER_PATH/STANDINGS_PATH/etc.) are reasonable guesses based on how CBS
-# fantasy site URLs are conventionally structured
-# (https://{league_name}.cbssports.com/...), not confirmed against a real
-# account yet. See /platform-accounts/cbs/raw-debug for checking these
-# against real data.
+# Confirmed live via /platform-accounts/cbs/raw-debug against a real
+# account: hitting https://{league_name}.cbssports.com/... (no sport
+# segment) doesn't recognize the session and redirects to CBS's login page
+# instead -- the redirect's own xurl parameter revealed the real host is
+# https://{league_name}.baseball.cbssports.com/...
 
 REQUEST_TIMEOUT = 20.0
 REQUEST_HEADERS = {
@@ -44,7 +42,7 @@ class CBSClient:
 
     def _get_html(self, path: str) -> str:
         resp = httpx.get(
-            f"https://{self.league_name}.cbssports.com{path}",
+            f"https://{self.league_name}.baseball.cbssports.com{path}",
             cookies=self.cookies,
             headers=REQUEST_HEADERS,
             timeout=REQUEST_TIMEOUT,
