@@ -24,6 +24,7 @@ export default function SettingsPage() {
   const [debugResult, setDebugResult] = useState<LoginDebugResult | null>(null)
   const [isDebugging, setIsDebugging] = useState(false)
   const [debugError, setDebugError] = useState<string | null>(null)
+  const [copyLabel, setCopyLabel] = useState('Copy to clipboard')
 
   useEffect(() => {
     platformAccountsApi
@@ -56,6 +57,33 @@ export default function SettingsPage() {
       setDebugError(typeof detail === 'string' ? detail : 'Debug request failed.')
     } finally {
       setIsDebugging(false)
+    }
+  }
+
+  async function handleCopyDebug() {
+    if (!debugResult) return
+    const text = JSON.stringify(debugResult, null, 2)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopyLabel('Copied!')
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      try {
+        document.execCommand('copy')
+        setCopyLabel('Copied!')
+      } catch {
+        setCopyLabel('Could not copy')
+      } finally {
+        document.body.removeChild(textarea)
+      }
+    } finally {
+      setTimeout(() => setCopyLabel('Copy to clipboard'), 2000)
     }
   }
 
@@ -166,6 +194,9 @@ export default function SettingsPage() {
         {debugError && <p className="form-error">{debugError}</p>}
         {debugResult && (
           <div style={{ marginTop: '1rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={handleCopyDebug} style={{ marginBottom: '0.75rem' }}>
+              {copyLabel}
+            </button>
             <p>
               <strong>Status:</strong> {debugResult.status_code} · <strong>Token found:</strong>{' '}
               {debugResult.token_found ? 'yes' : 'no'} · <strong>Final URL:</strong> {debugResult.final_url}
