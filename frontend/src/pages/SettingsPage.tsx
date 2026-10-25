@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import * as authApi from '../api/auth'
 import { API_BASE_URL } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -37,6 +37,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [bookmarklet, setBookmarklet] = useState<{ leagueName: string; href: string } | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const bookmarkletLinkRef = useRef<HTMLAnchorElement>(null)
 
   const [adminError, setAdminError] = useState<string | null>(null)
   const [isBecomingAdmin, setIsBecomingAdmin] = useState(false)
@@ -54,6 +55,15 @@ export default function SettingsPage() {
       .then(setAccounts)
       .finally(() => setIsLoadingAccounts(false))
   }, [])
+
+  useEffect(() => {
+    // React blocks `javascript:` URLs passed as a JSX href prop (throws on
+    // click) -- set it via a plain DOM call instead, which it doesn't
+    // intercept, so the bookmarklet actually works when dragged.
+    if (bookmarkletLinkRef.current && bookmarklet) {
+      bookmarkletLinkRef.current.setAttribute('href', bookmarklet.href)
+    }
+  }, [bookmarklet])
 
   async function handleDeleteAccount(account: PlatformAccount) {
     if (!window.confirm(`Remove ${account.platform.toUpperCase()} — ${account.display_name}?`)) return
@@ -218,7 +228,7 @@ export default function SettingsPage() {
             <p style={{ color: 'var(--success)' }}>Connected "{bookmarklet.leagueName}"! Now drag this to your bookmarks bar:</p>
             <p style={{ marginBottom: '0.75rem' }}>
               <a
-                href={bookmarklet.href}
+                ref={bookmarkletLinkRef}
                 className="btn"
                 style={{ display: 'inline-block', textDecoration: 'none' }}
                 onClick={(e) => e.preventDefault()}
