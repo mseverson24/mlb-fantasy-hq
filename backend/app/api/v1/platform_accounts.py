@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.integrations.cbs.adapter import CBSAdapter
-from app.integrations.cbs.client import CBSLoginError
+from app.integrations.cbs.client import CBSClient, CBSLoginError
 from app.models import Platform, PlatformAccount, User
-from app.schemas.admin import RawDebugResponse
+from app.schemas.admin import LoginDebugResponse, RawDebugResponse
 from app.schemas.league import LeagueRead
 from app.schemas.platform_account import LinkCBSAccountRequest, PlatformAccountRead
 from app.services import league_sync_service
@@ -84,6 +84,23 @@ def link_cbs_account(
         roster_positions=league.roster_positions,
         last_synced_at=league.last_synced_at,
     )
+
+
+@router.post("/cbs/debug-login", response_model=LoginDebugResponse)
+def cbs_debug_login(
+    payload: LinkCBSAccountRequest, _current_user: User = Depends(get_current_user)
+) -> LoginDebugResponse:
+    """Temporary diagnostic, not a permanent feature: a real login attempt
+    is coming back without the expected session token, so this makes the
+    exact same request login() does but returns what CBS actually sent
+    back instead of raising -- status code, where it redirected to, which
+    cookies it set, and a snippet of the HTML -- so the real login flow in
+    integrations/cbs/client.py can be corrected against real data. The
+    credentials are used for this one request only, never stored. Safe to
+    delete once CBS login is confirmed working."""
+    client = CBSClient(league_name=payload.league_name)
+    result = client.login_debug(payload.username, payload.password)
+    return LoginDebugResponse(**result)
 
 
 @router.get("/cbs/raw-debug", response_model=RawDebugResponse)

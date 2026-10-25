@@ -68,6 +68,33 @@ class CBSClient:
         self.cookies = dict(resp.cookies)
         return match.group(0)
 
+    def login_debug(self, username: str, password: str) -> dict:
+        """Same request login() makes, but returns raw diagnostics instead
+        of raising -- for figuring out why a real login attempt doesn't
+        come back with the expected token (see /platform-accounts/cbs/
+        debug-login). Never logged/stored anywhere; returned once, directly
+        to the same authenticated user who just submitted these credentials."""
+        resp = httpx.post(
+            _LOGIN_URL,
+            data={
+                "userid": username,
+                "password": password,
+                "xurl": f"https://{self.league_name}.cbssports.com/",
+            },
+            headers=REQUEST_HEADERS,
+            timeout=REQUEST_TIMEOUT,
+            follow_redirects=True,
+        )
+        match = _TOKEN_RE.search(resp.text)
+        return {
+            "status_code": resp.status_code,
+            "final_url": str(resp.url),
+            "token_found": match is not None,
+            "cookie_names": list(resp.cookies.keys()),
+            "response_length": len(resp.text),
+            "html_snippet": resp.text[:4000],
+        }
+
     def _get_html(self, path: str) -> str:
         resp = httpx.get(
             f"https://{self.league_name}.cbssports.com{path}",
