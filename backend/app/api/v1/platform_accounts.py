@@ -119,12 +119,17 @@ def delete_platform_account(
 def cbs_raw_debug(
     page: str = "roster",
     offset: int = 0,
+    find: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> RawDebugResponse:
     """Serves back whatever the bookmarklet last ingested for this page
     type (see RawDebugResponse's docstring) -- lets the real markup be
-    inspected and the mapper selectors corrected against it."""
+    inspected and the mapper selectors corrected against it. A 650KB+
+    real CBS page is mostly <head> script/tracker boilerplate before any
+    real content, so `find` jumps straight to the first case-insensitive
+    match of a substring (e.g. a player's name, "<table") instead of
+    paging through dozens of 15KB windows by hand."""
     account = (
         db.query(PlatformAccount)
         .filter(PlatformAccount.user_id == current_user.id, PlatformAccount.platform == Platform.cbs)
@@ -139,6 +144,18 @@ def cbs_raw_debug(
         return RawDebugResponse(page=page, status="not_ingested", error="No page ingested yet -- use the bookmarklet first")
 
     html = entry.get("html", "")
+    if find:
+        idx = html.lower().find(find.lower())
+        if idx == -1:
+            return RawDebugResponse(
+                page=page,
+                status="not_found",
+                error=f"{find!r} not found in the ingested HTML",
+                total_length=entry.get("total_length", len(html)),
+                ingested_at=entry.get("at"),
+            )
+        offset = max(0, idx - 500)
+
     return RawDebugResponse(
         page=page,
         status="ok",

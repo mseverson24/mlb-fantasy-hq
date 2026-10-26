@@ -30,9 +30,9 @@ export interface RawDebugResult {
   ingested_at: string | null
 }
 
-export async function getCBSRawDebug(page: string, offset = 0): Promise<RawDebugResult> {
+export async function getCBSRawDebug(page: string, offset = 0, find?: string): Promise<RawDebugResult> {
   const { data } = await apiClient.get<RawDebugResult>('/platform-accounts/cbs/raw-debug', {
-    params: { page, offset },
+    params: { page, offset, find: find || undefined },
   })
   return data
 }

@@ -48,6 +48,7 @@ export default function SettingsPage() {
   const [isDebugLoading, setIsDebugLoading] = useState(false)
   const [debugError, setDebugError] = useState<string | null>(null)
   const [copyLabel, setCopyLabel] = useState('Copy')
+  const [debugFind, setDebugFind] = useState('')
 
   useEffect(() => {
     platformAccountsApi
@@ -111,13 +112,13 @@ export default function SettingsPage() {
     }
   }
 
-  async function fetchDebug(page: string, offset: number) {
+  async function fetchDebug(page: string, offset: number, find?: string) {
     setIsDebugLoading(true)
     setDebugError(null)
     try {
-      const result = await platformAccountsApi.getCBSRawDebug(page, offset)
+      const result = await platformAccountsApi.getCBSRawDebug(page, offset, find)
       setDebugResult(result)
-      setDebugOffset(offset)
+      setDebugOffset(result.offset)
     } catch (err) {
       const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined
       setDebugError(typeof detail === 'string' ? detail : 'Could not fetch debug HTML.')
@@ -276,6 +277,23 @@ export default function SettingsPage() {
             disabled={isDebugLoading}
           >
             {isDebugLoading ? 'Loading…' : 'View'}
+          </button>
+        </div>
+        <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.75rem' }}>
+          <input
+            type="text"
+            value={debugFind}
+            onChange={(e) => setDebugFind(e.target.value)}
+            placeholder="jump to text, e.g. a player name or <table"
+            style={{ flex: 1 }}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => fetchDebug(debugPage, 0, debugFind)}
+            disabled={isDebugLoading || !debugFind}
+          >
+            Find
           </button>
         </div>
 
