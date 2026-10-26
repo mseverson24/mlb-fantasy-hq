@@ -15,9 +15,9 @@ function buildBookmarklet(ingestToken: string): string {
     var TOKEN=${JSON.stringify(ingestToken)};
     var path=location.pathname;
     var page='league';
-    if(path.indexOf('/roster')>=0) page='roster';
-    else if(path.indexOf('/standings')>=0) page='standings';
+    if(path.indexOf('/standings')>=0) page='standings';
     else if(path.indexOf('/players')>=0) page='players';
+    else if(path.indexOf('/teams')>=0) page='roster';
     fetch(API+'/platform-accounts/cbs/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TOKEN,page:page,html:document.documentElement.outerHTML})})
       .then(function(r){return r.json()})
       .then(function(d){alert((d.ok?'MLB FantasyHQ: ':'MLB FantasyHQ failed: ')+d.message)})
