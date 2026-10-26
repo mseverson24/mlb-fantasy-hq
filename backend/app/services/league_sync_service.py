@@ -85,9 +85,13 @@ def ingest_page(
     if page not in _PAGES:
         raise ValueError(f"Unknown page {page!r}")
 
+    # Committed on its own, before any parsing -- a parse failure below
+    # must not roll back the HTML we just cached, or /cbs/raw-debug has
+    # nothing to show and the mapper can never be fixed against it.
     _store_ingested_html(platform_account, page, html)
     db.add(platform_account)
-    db.flush()
+    db.commit()
+    db.refresh(platform_account)
 
     if page == "league":
         league_dto = map_league(html, platform_account.extra_data.get("league_name"), season)
