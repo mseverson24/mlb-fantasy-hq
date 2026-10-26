@@ -54,6 +54,15 @@ def map_league(html: str, platform_league_id: str, season: str) -> LeagueDTO:
 
 
 def map_roster(html: str, team_external_id: str) -> RosterDTO:
+    """Confirmed live against a real logged-in roster page (fetched via the
+    bookmarklet, not a guess): CBS's player link is
+    .../players/playerpage/<id> -- the numeric id is the *last* path
+    segment, not the one right after "players" as originally assumed.
+    The roster slot (e.g. "1B") and the player's real, possibly multi-
+    position eligibility + MLB team (e.g. "1B,3B • BOS") are two
+    different things in two different cells: slot is td[1]; position/team
+    is a nested <span class="playerPositionAndTeam"> inside the name
+    cell, not its own <td>."""
     soup = _soup(html)
     table = soup.select_one("table")
     if table is None:
@@ -61,21 +70,31 @@ def map_roster(html: str, team_external_id: str) -> RosterDTO:
 
     slots: list[RosterSlotDTO] = []
     for row in table.select("tbody tr"):
-        player_link = row.select_one("a[href*='/players/']")
+        player_link = row.select_one("a.playerLink[href*='/players/']")
         if player_link is None:
             continue
         href = player_link.get("href", "")
         parts = [p for p in href.split("/") if p]
-        if "players" not in parts or parts.index("players") + 1 >= len(parts):
+        if not parts or not parts[-1].isdigit():
             continue
-        player_id = parts[parts.index("players") + 1]
+        player_id = parts[-1]
         full_name = player_link.get_text(strip=True)
-        if not player_id.isdigit() or not full_name:
+        if not full_name:
             continue
-        cells = [c.get_text(strip=True) for c in row.select("td")]
-        slot = cells[0] if cells else None
-        position = cells[1] if len(cells) > 1 else None
-        mlb_team = cells[2] if len(cells) > 2 else None
+
+        cells = row.select("td")
+        slot = cells[1].get_text(strip=True) if len(cells) > 1 else None
+
+        position: str | None = None
+        mlb_team: str | None = None
+        pos_team_span = row.select_one("span.playerPositionAndTeam")
+        if pos_team_span:
+            text = pos_team_span.get_text(strip=True)
+            if "•" in text:
+                position, mlb_team = (p.strip() for p in text.split("•", 1))
+            else:
+                position = text or None
+
         slots.append(
             RosterSlotDTO(
                 player_external_id=player_id,
