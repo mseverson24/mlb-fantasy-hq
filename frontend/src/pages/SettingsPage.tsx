@@ -242,6 +242,10 @@ export default function SettingsPage() {
               your league home, My Team/roster, Standings, Players — while logged in, and click that bookmark on
               each one. It detects which page you're on automatically.
             </p>
+            <p className="muted" style={{ fontSize: '0.85rem' }}>
+              For pickup suggestions on the Pickups page, click it on the Players page filtered to{' '}
+              <strong>Free Agents</strong> — that's what the suggestions treat as "available."
+            </p>
           </div>
         )}
       </div>

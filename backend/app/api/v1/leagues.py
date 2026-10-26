@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models import League, LeagueLink, PlatformAccount, PlayerStat, Roster, RosterPlayer, Team, User
+from app.models import League, LeagueLink, PlatformAccount, PlayerStat, Roster, Team, User
 from app.schemas.league import LeagueRead, StandingsRowRead
 from app.schemas.player import PlayerStatRead, RosterPlayerRead
-from app.services import league_sync_service
+from app.schemas.suggestion import SuggestionsResponse
+from app.services import league_sync_service, suggestion_service
 
 router = APIRouter(prefix="/leagues", tags=["leagues"])
 
@@ -120,3 +121,16 @@ def get_standings(
     league, platform_account = _get_linked_league(db, league_id, current_user)
     rows = league_sync_service.get_cached_standings(league, platform_account)
     return [StandingsRowRead(**row) for row in rows]
+
+
+@router.get("/{league_id}/suggestions", response_model=SuggestionsResponse)
+def get_suggestions(
+    league_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+) -> SuggestionsResponse:
+    """Pickup suggestions: upgrades from whatever's synced as available on
+    CBS, plus speculative prospect stashes from MLB Pipeline. Pulls live
+    MLB Stats API season lines on each call to rank them -- see
+    suggestion_service's docstring for the scoring heuristic and its
+    "best effort" data sources."""
+    league, _ = _get_linked_league(db, league_id, current_user)
+    return suggestion_service.build_suggestions(db, league)

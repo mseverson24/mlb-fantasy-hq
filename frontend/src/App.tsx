@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import AppShell from './components/AppShell'
 import DashboardPage from './pages/DashboardPage'
 import LoginPage from './pages/LoginPage'
+import PickupsPage from './pages/PickupsPage'
 import RankingsPage from './pages/RankingsPage'
 import RegisterPage from './pages/RegisterPage'
 import RosterPage from './pages/RosterPage'
@@ -52,6 +53,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <RankingsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/pickups"
+        element={
+          <ProtectedRoute>
+            <PickupsPage />
           </ProtectedRoute>
         }
       />

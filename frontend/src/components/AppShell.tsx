@@ -29,6 +29,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <NavLink to="/rankings" className={navLinkClass}>
               Rankings
             </NavLink>
+            <NavLink to="/pickups" className={navLinkClass}>
+              Pickups
+            </NavLink>
             <NavLink to="/settings" className={navLinkClass}>
               Settings
             </NavLink>

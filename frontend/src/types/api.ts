@@ -69,3 +69,18 @@ export interface RankedPlayer {
   position: string | null
   mlb_team: string | null
 }
+
+export interface Suggestion {
+  kind: 'upgrade' | 'stash'
+  position: string | null
+  add_full_name: string
+  add_detail: string
+  drop_full_name: string | null
+  drop_detail: string | null
+  reason: string
+}
+
+export interface SuggestionsResponse {
+  suggestions: Suggestion[]
+  warnings: string[]
+}
